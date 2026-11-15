@@ -1,0 +1,57 @@
+version: '3.9'
+
+services:
+  # ---- Backend Node.js ----
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fireguard-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-fireguard_secret_change_in_prod}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
+      DATABASE_URL: postgresql://fireguard:fireguard_pass@postgres:5432/fireguard_db
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fireguard-net
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  # ---- PostgreSQL + PostGIS ----
+  postgres:
+    image: postgis/postgis:15-3.4
+    container_name: fireguard-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: fireguard_db
+      POSTGRES_USER: fireguard
+      POSTGRES_PASSWORD: fireguard_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fireguard -d fireguard_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fireguard-net
+
+networks:
+  fireguard-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
